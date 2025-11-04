@@ -1,0 +1,126 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model JobApplication {
+  id            String   @id @default(cuid())
+  company       String
+  position      String
+  pay           String?
+  status        ApplicationStatus @default(NOT_APPLIED)
+  resumeFile    String?
+  coverLetterFile String?
+  notes         String?
+  
+  // Status tracking with dates and completion states
+  appliedDate            DateTime?
+  initialCallDate        DateTime?
+  initialCallCompleted   Boolean   @default(false)
+  firstInterviewDate     DateTime?
+  firstInterviewCompleted Boolean  @default(false)
+  secondInterviewDate    DateTime?
+  secondInterviewCompleted Boolean @default(false)
+  thirdInterviewDate     DateTime?
+  thirdInterviewCompleted Boolean  @default(false)
+  negotiationsDate        DateTime?
+  negotiationsCompleted   Boolean   @default(false)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  contacts      Contact[]
+  timelineEvents TimelineEvent[]
+  
+  @@map("job_applications")
+}
+
+model Contact {
+  id              String   @id @default(cuid())
+  applicationId   String
+  name            String
+  email           String?
+  phone           String?
+  position        String?
+  department      String?
+  notes           String?
+  isPrimary       Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  application     JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  @@map("contacts")
+}
+
+model TimelineEvent {
+  id              String   @id @default(cuid())
+  applicationId   String
+  type            TimelineEventType
+  title           String
+  description     String?
+  eventDate       DateTime
+  isCompleted     Boolean  @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  application     JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  
+  @@map("timeline_events")
+}
+
+enum ApplicationStatus {
+  NOT_APPLIED
+  APPLIED
+  INITIAL_CALL
+  FIRST_INTERVIEW
+  SECOND_INTERVIEW
+  THIRD_INTERVIEW
+  NEGOTIATIONS
+  NOT_ACCEPTED
+  LOST
+}
+
+enum TimelineEventType {
+  APPLICATION_SUBMITTED
+  INITIAL_CALL_SCHEDULED
+  INITIAL_CALL_COMPLETED
+  FIRST_INTERVIEW_SCHEDULED
+  FIRST_INTERVIEW_COMPLETED
+  SECOND_INTERVIEW_SCHEDULED
+  SECOND_INTERVIEW_COMPLETED
+  THIRD_INTERVIEW_SCHEDULED
+  THIRD_INTERVIEW_COMPLETED
+  NEGOTIATIONS_STARTED
+  NEGOTIATIONS_COMPLETED
+  OFFER_RECEIVED
+  OFFER_ACCEPTED
+  OFFER_DECLINED
+  REJECTION_RECEIVED
+  FOLLOW_UP_SENT
+  NOTE_ADDED
+  CONTACT_ADDED
+}
