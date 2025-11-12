@@ -44,6 +44,13 @@ model JobApplication {
   negotiationsDate        DateTime?
   negotiationsCompleted   Boolean   @default(false)
   
+  // Interview notes
+  initialCallNotes        String?
+  firstInterviewNotes     String?
+  secondInterviewNotes    String?
+  thirdInterviewNotes     String?
+  negotiationsNotes       String?
+  
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   
@@ -119,8 +126,9 @@ enum TimelineEventType {
   OFFER_RECEIVED
   OFFER_ACCEPTED
   OFFER_DECLINED
-  REJECTION_RECEIVED
-  FOLLOW_UP_SENT
+ REJECTION_RECEIVED
+ FOLLOW_UP_SENT
   NOTE_ADDED
   CONTACT_ADDED
+  STATUS_CHANGED
 }

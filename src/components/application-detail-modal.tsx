@@ -13,19 +13,21 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { 
-  Calendar as CalendarIcon, 
+ Calendar as CalendarIcon, 
   Clock, 
   CheckCircle, 
   Building2, 
   User, 
   Mail, 
-  Phone, 
+ Phone, 
   FileText,
   Plus,
   Edit,
   Save,
   X,
+  Trash2,
   MessageSquare,
   Briefcase,
   DollarSign
@@ -37,25 +39,30 @@ interface JobApplication {
   company: string
   position: string
   pay?: string
-  status: string
-  appliedDate?: string
+ status: string
+ appliedDate?: string
   initialCallDate?: string
   initialCallCompleted: boolean
+ initialCallNotes?: string
   firstInterviewDate?: string
-  firstInterviewCompleted: boolean
-  secondInterviewDate?: string
+ firstInterviewCompleted: boolean
+  firstInterviewNotes?: string
+ secondInterviewDate?: string
   secondInterviewCompleted: boolean
+ secondInterviewNotes?: string
   thirdInterviewDate?: string
   thirdInterviewCompleted: boolean
-  negotiationsDate?: string
+  thirdInterviewNotes?: string
+ negotiationsDate?: string
   negotiationsCompleted: boolean
+  negotiationsNotes?: string
   resumeFile?: string
   coverLetterFile?: string
   notes?: string
-  createdAt: string
-  updatedAt: string
-  contacts?: Contact[]
-  timelineEvents?: TimelineEvent[]
+ createdAt: string
+ updatedAt: string
+ contacts?: Contact[]
+ timelineEvents?: TimelineEvent[]
 }
 
 interface Contact {
@@ -119,22 +126,23 @@ const statusLabels = {
 const timelineEventConfig = {
   APPLICATION_SUBMITTED: { icon: FileText, color: 'text-blue-600', label: 'Application Submitted' },
   INITIAL_CALL_SCHEDULED: { icon: CalendarIcon, color: 'text-purple-600', label: 'Initial Call Scheduled' },
-  INITIAL_CALL_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'Initial Call Completed' },
-  FIRST_INTERVIEW_SCHEDULED: { icon: CalendarIcon, color: 'text-yellow-600', label: 'First Interview Scheduled' },
+ INITIAL_CALL_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'Initial Call Completed' },
+ FIRST_INTERVIEW_SCHEDULED: { icon: CalendarIcon, color: 'text-yellow-600', label: 'First Interview Scheduled' },
   FIRST_INTERVIEW_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'First Interview Completed' },
-  SECOND_INTERVIEW_SCHEDULED: { icon: CalendarIcon, color: 'text-orange-600', label: 'Second Interview Scheduled' },
-  SECOND_INTERVIEW_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'Second Interview Completed' },
-  THIRD_INTERVIEW_SCHEDULED: { icon: CalendarIcon, color: 'text-red-600', label: 'Third Interview Scheduled' },
+ SECOND_INTERVIEW_SCHEDULED: { icon: CalendarIcon, color: 'text-orange-600', label: 'Second Interview Scheduled' },
+ SECOND_INTERVIEW_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'Second Interview Completed' },
+ THIRD_INTERVIEW_SCHEDULED: { icon: CalendarIcon, color: 'text-red-600', label: 'Third Interview Scheduled' },
   THIRD_INTERVIEW_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'Third Interview Completed' },
-  NEGOTIATIONS_STARTED: { icon: DollarSign, color: 'text-green-600', label: 'Negotiations Started' },
+ NEGOTIATIONS_STARTED: { icon: DollarSign, color: 'text-green-600', label: 'Negotiations Started' },
   NEGOTIATIONS_COMPLETED: { icon: CheckCircle, color: 'text-green-600', label: 'Negotiations Completed' },
   OFFER_RECEIVED: { icon: Briefcase, color: 'text-blue-600', label: 'Offer Received' },
-  OFFER_ACCEPTED: { icon: CheckCircle, color: 'text-green-600', label: 'Offer Accepted' },
-  OFFER_DECLINED: { icon: X, color: 'text-red-600', label: 'Offer Declined' },
-  REJECTION_RECEIVED: { icon: X, color: 'text-red-600', label: 'Rejection Received' },
+ OFFER_ACCEPTED: { icon: CheckCircle, color: 'text-green-600', label: 'Offer Accepted' },
+ OFFER_DECLINED: { icon: X, color: 'text-red-600', label: 'Offer Declined' },
+ REJECTION_RECEIVED: { icon: X, color: 'text-red-600', label: 'Rejection Received' },
   FOLLOW_UP_SENT: { icon: MessageSquare, color: 'text-gray-600', label: 'Follow-up Sent' },
-  NOTE_ADDED: { icon: FileText, color: 'text-gray-600', label: 'Note Added' },
-  CONTACT_ADDED: { icon: User, color: 'text-gray-600', label: 'Contact Added' }
+ NOTE_ADDED: { icon: FileText, color: 'text-gray-600', label: 'Note Added' },
+  CONTACT_ADDED: { icon: User, color: 'text-gray-600', label: 'Contact Added' },
+  STATUS_CHANGED: { icon: Briefcase, color: 'text-purple-600', label: 'Status Changed' }
 }
 
 export function ApplicationDetailModal({ 
@@ -151,6 +159,8 @@ export function ApplicationDetailModal({
   const [addingContact, setAddingContact] = useState(false)
   const [newEvent, setNewEvent] = useState<Partial<TimelineEvent>>({})
   const [addingEvent, setAddingEvent] = useState(false)
+  const [deletingTimelineEvent, setDeletingTimelineEvent] = useState<string | null>(null)
+  const [deletingApplication, setDeletingApplication] = useState(false)
 
   useEffect(() => {
     if (application) {
@@ -169,12 +179,24 @@ export function ApplicationDetailModal({
 
   const handleSaveDates = async () => {
     const updates = {
+      company: application.company,
+      position: application.position,
       appliedDate: dateEdits.appliedDate?.toISOString().split('T')[0],
       initialCallDate: dateEdits.initialCallDate?.toISOString().split('T')[0],
+      initialCallCompleted: application.initialCallCompleted,
+      initialCallNotes: application.initialCallNotes,
       firstInterviewDate: dateEdits.firstInterviewDate?.toISOString().split('T')[0],
+      firstInterviewCompleted: application.firstInterviewCompleted,
+      firstInterviewNotes: application.firstInterviewNotes,
       secondInterviewDate: dateEdits.secondInterviewDate?.toISOString().split('T')[0],
+      secondInterviewCompleted: application.secondInterviewCompleted,
+      secondInterviewNotes: application.secondInterviewNotes,
       thirdInterviewDate: dateEdits.thirdInterviewDate?.toISOString().split('T')[0],
+      thirdInterviewCompleted: application.thirdInterviewCompleted,
+      thirdInterviewNotes: application.thirdInterviewNotes,
       negotiationsDate: dateEdits.negotiationsDate?.toISOString().split('T')[0],
+      negotiationsCompleted: application.negotiationsCompleted,
+      negotiationsNotes: application.negotiationsNotes,
     }
 
     onApplicationUpdate(application.id, updates)
@@ -208,7 +230,7 @@ export function ApplicationDetailModal({
       type: newEvent.type,
       title: newEvent.title,
       description: newEvent.description || null,
-      eventDate: newEvent.eventDate?.toISOString() || new Date().toISOString(),
+      eventDate: newEvent.eventDate || new Date().toISOString(),
       isCompleted: newEvent.isCompleted || false
     }
 
@@ -224,154 +246,242 @@ export function ApplicationDetailModal({
     return format(new Date(dateString), 'MMM dd, yyyy')
   }
 
-  const getTimelineEvents = () => {
+ const getTimelineEvents = () => {
     const events: TimelineEvent[] = application.timelineEvents || []
     
     // Add system-generated events based on application data
+    // Use a special prefix to ensure uniqueness from database-stored events
     if (application.appliedDate) {
-      events.push({
-        id: 'applied',
-        applicationId: application.id,
-        type: 'APPLICATION_SUBMITTED',
-        title: 'Application Submitted',
-        eventDate: application.appliedDate,
-        isCompleted: true,
-        createdAt: application.createdAt,
-        updatedAt: application.updatedAt
-      })
-    }
-
-    if (application.initialCallDate) {
-      events.push({
-        id: 'initial-call-scheduled',
-        applicationId: application.id,
-        type: 'INITIAL_CALL_SCHEDULED',
-        title: 'Initial Call Scheduled',
-        eventDate: application.initialCallDate,
-        isCompleted: application.initialCallCompleted,
-        createdAt: application.createdAt,
-        updatedAt: application.updatedAt
-      })
-
-      if (application.initialCallCompleted) {
+      const systemEventId = `${application.id}-system-applied`
+      // Only add if this system event doesn't already exist
+      if (!events.some(event => event.id === systemEventId)) {
         events.push({
-          id: 'initial-call-completed',
+          id: systemEventId,
           applicationId: application.id,
-          type: 'INITIAL_CALL_COMPLETED',
-          title: 'Initial Call Completed',
-          eventDate: application.initialCallDate,
+          type: 'APPLICATION_SUBMITTED',
+          title: 'Application Submitted',
+          eventDate: application.appliedDate,
           isCompleted: true,
           createdAt: application.createdAt,
           updatedAt: application.updatedAt
         })
+      }
+    }
+
+    if (application.initialCallDate) {
+      const scheduledEventId = `${application.id}-system-initial-call-scheduled`
+      // Only add if this system event doesn't already exist
+      if (!events.some(event => event.id === scheduledEventId)) {
+        events.push({
+          id: scheduledEventId,
+          applicationId: application.id,
+          type: 'INITIAL_CALL_SCHEDULED',
+          title: 'Initial Call Scheduled',
+          eventDate: application.initialCallDate,
+          isCompleted: application.initialCallCompleted,
+          createdAt: application.createdAt,
+          updatedAt: application.updatedAt
+        })
+      }
+
+      if (application.initialCallCompleted) {
+        const completedEventId = `${application.id}-system-initial-call-completed`
+        // Only add if this system event doesn't already exist
+        if (!events.some(event => event.id === completedEventId)) {
+          events.push({
+            id: completedEventId,
+            applicationId: application.id,
+            type: 'INITIAL_CALL_COMPLETED',
+            title: 'Initial Call Completed',
+            eventDate: application.initialCallDate,
+            isCompleted: true,
+            createdAt: application.createdAt,
+            updatedAt: application.updatedAt
+          })
+        }
       }
     }
 
     if (application.firstInterviewDate) {
-      events.push({
-        id: 'first-interview-scheduled',
-        applicationId: application.id,
-        type: 'FIRST_INTERVIEW_SCHEDULED',
-        title: 'First Interview Scheduled',
-        eventDate: application.firstInterviewDate,
-        isCompleted: application.firstInterviewCompleted,
-        createdAt: application.createdAt,
-        updatedAt: application.updatedAt
-      })
-
-      if (application.firstInterviewCompleted) {
+      const scheduledEventId = `${application.id}-system-first-interview-scheduled`
+      // Only add if this system event doesn't already exist
+      if (!events.some(event => event.id === scheduledEventId)) {
         events.push({
-          id: 'first-interview-completed',
+          id: scheduledEventId,
           applicationId: application.id,
-          type: 'FIRST_INTERVIEW_COMPLETED',
-          title: 'First Interview Completed',
+          type: 'FIRST_INTERVIEW_SCHEDULED',
+          title: 'First Interview Scheduled',
           eventDate: application.firstInterviewDate,
-          isCompleted: true,
+          isCompleted: application.firstInterviewCompleted,
           createdAt: application.createdAt,
           updatedAt: application.updatedAt
         })
+      }
+
+      if (application.firstInterviewCompleted) {
+        const completedEventId = `${application.id}-system-first-interview-completed`
+        // Only add if this system event doesn't already exist
+        if (!events.some(event => event.id === completedEventId)) {
+          events.push({
+            id: completedEventId,
+            applicationId: application.id,
+            type: 'FIRST_INTERVIEW_COMPLETED',
+            title: 'First Interview Completed',
+            eventDate: application.firstInterviewDate,
+            isCompleted: true,
+            createdAt: application.createdAt,
+            updatedAt: application.updatedAt
+          })
+        }
       }
     }
 
     if (application.secondInterviewDate) {
-      events.push({
-        id: 'second-interview-scheduled',
-        applicationId: application.id,
-        type: 'SECOND_INTERVIEW_SCHEDULED',
-        title: 'Second Interview Scheduled',
-        eventDate: application.secondInterviewDate,
-        isCompleted: application.secondInterviewCompleted,
-        createdAt: application.createdAt,
-        updatedAt: application.updatedAt
-      })
-
-      if (application.secondInterviewCompleted) {
+      const scheduledEventId = `${application.id}-system-second-interview-scheduled`
+      // Only add if this system event doesn't already exist
+      if (!events.some(event => event.id === scheduledEventId)) {
         events.push({
-          id: 'second-interview-completed',
+          id: scheduledEventId,
           applicationId: application.id,
-          type: 'SECOND_INTERVIEW_COMPLETED',
-          title: 'Second Interview Completed',
+          type: 'SECOND_INTERVIEW_SCHEDULED',
+          title: 'Second Interview Scheduled',
           eventDate: application.secondInterviewDate,
-          isCompleted: true,
+          isCompleted: application.secondInterviewCompleted,
           createdAt: application.createdAt,
           updatedAt: application.updatedAt
         })
+      }
+
+      if (application.secondInterviewCompleted) {
+        const completedEventId = `${application.id}-system-second-interview-completed`
+        // Only add if this system event doesn't already exist
+        if (!events.some(event => event.id === completedEventId)) {
+          events.push({
+            id: completedEventId,
+            applicationId: application.id,
+            type: 'SECOND_INTERVIEW_COMPLETED',
+            title: 'Second Interview Completed',
+            eventDate: application.secondInterviewDate,
+            isCompleted: true,
+            createdAt: application.createdAt,
+            updatedAt: application.updatedAt
+          })
+        }
       }
     }
 
     if (application.thirdInterviewDate) {
-      events.push({
-        id: 'third-interview-scheduled',
-        applicationId: application.id,
-        type: 'THIRD_INTERVIEW_SCHEDULED',
-        title: 'Third Interview Scheduled',
-        eventDate: application.thirdInterviewDate,
-        isCompleted: application.thirdInterviewCompleted,
-        createdAt: application.createdAt,
-        updatedAt: application.updatedAt
-      })
-
-      if (application.thirdInterviewCompleted) {
+      const scheduledEventId = `${application.id}-system-third-interview-scheduled`
+      // Only add if this system event doesn't already exist
+      if (!events.some(event => event.id === scheduledEventId)) {
         events.push({
-          id: 'third-interview-completed',
+          id: scheduledEventId,
           applicationId: application.id,
-          type: 'THIRD_INTERVIEW_COMPLETED',
-          title: 'Third Interview Completed',
+          type: 'THIRD_INTERVIEW_SCHEDULED',
+          title: 'Third Interview Scheduled',
           eventDate: application.thirdInterviewDate,
-          isCompleted: true,
+          isCompleted: application.thirdInterviewCompleted,
           createdAt: application.createdAt,
           updatedAt: application.updatedAt
         })
+      }
+
+      if (application.thirdInterviewCompleted) {
+        const completedEventId = `${application.id}-system-third-interview-completed`
+        // Only add if this system event doesn't already exist
+        if (!events.some(event => event.id === completedEventId)) {
+          events.push({
+            id: completedEventId,
+            applicationId: application.id,
+            type: 'THIRD_INTERVIEW_COMPLETED',
+            title: 'Third Interview Completed',
+            eventDate: application.thirdInterviewDate,
+            isCompleted: true,
+            createdAt: application.createdAt,
+            updatedAt: application.updatedAt
+          })
+        }
       }
     }
 
     if (application.negotiationsDate) {
-      events.push({
-        id: 'negotiations-started',
-        applicationId: application.id,
-        type: 'NEGOTIATIONS_STARTED',
-        title: 'Negotiations Started',
-        eventDate: application.negotiationsDate,
-        isCompleted: application.negotiationsCompleted,
-        createdAt: application.createdAt,
-        updatedAt: application.updatedAt
-      })
-
-      if (application.negotiationsCompleted) {
+      const startedEventId = `${application.id}-system-negotiations-started`
+      // Only add if this system event doesn't already exist
+      if (!events.some(event => event.id === startedEventId)) {
         events.push({
-          id: 'negotiations-completed',
+          id: startedEventId,
           applicationId: application.id,
-          type: 'NEGOTIATIONS_COMPLETED',
-          title: 'Negotiations Completed',
+          type: 'NEGOTIATIONS_STARTED',
+          title: 'Negotiations Started',
           eventDate: application.negotiationsDate,
-          isCompleted: true,
+          isCompleted: application.negotiationsCompleted,
           createdAt: application.createdAt,
           updatedAt: application.updatedAt
         })
       }
+
+      if (application.negotiationsCompleted) {
+        const completedEventId = `${application.id}-system-negotiations-completed`
+        // Only add if this system event doesn't already exist
+        if (!events.some(event => event.id === completedEventId)) {
+          events.push({
+            id: completedEventId,
+            applicationId: application.id,
+            type: 'NEGOTIATIONS_COMPLETED',
+            title: 'Negotiations Completed',
+            eventDate: application.negotiationsDate,
+            isCompleted: true,
+            createdAt: application.createdAt,
+            updatedAt: application.updatedAt
+          })
+        }
+      }
     }
 
     return events.sort((a, b) => new Date(b.eventDate).getTime() - new Date(a.eventDate).getTime())
+  }
+
+  const handleDeleteTimelineEvent = async (eventId: string) => {
+    try {
+      const response = await fetch(`/api/timeline-events/${eventId}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        // Update the application state to remove the deleted event
+        if (application) {
+          const updatedTimelineEvents = application.timelineEvents?.filter(event => event.id !== eventId)
+          onApplicationUpdate(application.id, {
+            ...application,
+            timelineEvents: updatedTimelineEvents
+          })
+        }
+      } else {
+        console.error('Failed to delete timeline event')
+      }
+    } catch (error) {
+      console.error('Error deleting timeline event:', error)
+    } finally {
+      setDeletingTimelineEvent(null)
+    }
+  }
+
+  const handleDeleteApplication = async () => {
+    try {
+      const response = await fetch(`/api/applications/${application?.id}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        onClose()
+      } else {
+        console.error('Failed to delete application')
+      }
+    } catch (error) {
+      console.error('Error deleting application:', error)
+    } finally {
+      setDeletingApplication(false)
+    }
   }
 
   return (
@@ -406,6 +516,31 @@ export function ApplicationDetailModal({
                   <SelectItem value="LOST">Lost</SelectItem>
                 </SelectContent>
               </Select>
+              <AlertDialog open={deletingApplication}>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm" className="flex items-center gap-1">
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Are you sure you want to delete this application?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete the application for "{application?.company} - {application?.position}" and all associated data including contacts and timeline events. This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setDeletingApplication(false)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction 
+                      onClick={() => handleDeleteApplication()}
+                      className="bg-red-600 hover:bg-red-700"
+                    >
+                      Delete Application
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
         </DialogHeader>
@@ -488,8 +623,8 @@ export function ApplicationDetailModal({
                     <div className="flex items-center space-x-2 mt-6">
                       <Checkbox
                         id="completed"
-                        checked={newEvent.isCompleted || false}
-                        onCheckedChange={(checked) => setNewEvent({...newEvent, isCompleted: checked})}
+                        checked={!!newEvent.isCompleted}
+                        onCheckedChange={(checked) => setNewEvent({...newEvent, isCompleted: checked === true})}
                       />
                       <Label htmlFor="completed">Completed</Label>
                     </div>
@@ -525,6 +660,30 @@ export function ApplicationDetailModal({
                               {event.isCompleted && (
                                 <CheckCircle className="w-4 h-4 text-green-600" />
                               )}
+                              <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hover:bg-red-100 hover:text-red-600">
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                  <AlertDialogHeader>
+                                    <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                      This will permanently delete the timeline event "{event.title}". This action cannot be undone.
+                                    </AlertDialogDescription>
+                                  </AlertDialogHeader>
+                                  <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction 
+                                      onClick={() => handleDeleteTimelineEvent(event.id)}
+                                      className="bg-red-600 hover:bg-red-700"
+                                    >
+                                      Delete
+                                    </AlertDialogAction>
+                                  </AlertDialogFooter>
+                                </AlertDialogContent>
+                              </AlertDialog>
                             </div>
                           </div>
                           {event.description && (
@@ -593,31 +752,74 @@ export function ApplicationDetailModal({
               <div className="grid gap-4">
                 {[
                   { key: 'appliedDate', label: 'Applied Date', date: application.appliedDate },
-                  { key: 'initialCallDate', label: 'Initial Call', date: application.initialCallDate, completed: application.initialCallCompleted },
-                  { key: 'firstInterviewDate', label: 'First Interview', date: application.firstInterviewDate, completed: application.firstInterviewCompleted },
-                  { key: 'secondInterviewDate', label: 'Second Interview', date: application.secondInterviewDate, completed: application.secondInterviewCompleted },
-                  { key: 'thirdInterviewDate', label: 'Third Interview', date: application.thirdInterviewDate, completed: application.thirdInterviewCompleted },
-                  { key: 'negotiationsDate', label: 'Negotiations', date: application.negotiationsDate, completed: application.negotiationsCompleted }
-                ].map(({ key, label, date, completed }) => (
+                  { key: 'initialCallDate', label: 'Initial Call', date: application.initialCallDate, completed: application.initialCallCompleted, notes: application.initialCallNotes },
+                  { key: 'firstInterviewDate', label: 'First Interview', date: application.firstInterviewDate, completed: application.firstInterviewCompleted, notes: application.firstInterviewNotes },
+                  { key: 'secondInterviewDate', label: 'Second Interview', date: application.secondInterviewDate, completed: application.secondInterviewCompleted, notes: application.secondInterviewNotes },
+                  { key: 'thirdInterviewDate', label: 'Third Interview', date: application.thirdInterviewDate, completed: application.thirdInterviewCompleted, notes: application.thirdInterviewNotes },
+                  { key: 'negotiationsDate', label: 'Negotiations', date: application.negotiationsDate, completed: application.negotiationsCompleted, notes: application.negotiationsNotes }
+                ].map(({ key, label, date, completed, notes }) => (
                   <Card key={key}>
                     <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <h4 className="font-semibold">{label}</h4>
-                          <p className="text-sm text-gray-600">
-                            {date ? formatDate(date) : 'Not scheduled'}
-                          </p>
+                      <div className="flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-semibold">{label}</h4>
+                            <p className="text-sm text-gray-600">
+                              {date ? formatDate(date) : 'Not scheduled'}
+                            </p>
+                          </div>
+                          {date && (
+                            <div className="flex items-center gap-2">
+                              {completed ? (
+                                <CheckCircle className="w-5 h-5 text-green-600" />
+                              ) : (
+                                <Clock className="w-5 h-5 text-gray-400" />
+                              )}
+                              <Badge variant={completed ? "default" : "secondary"}>
+                                {completed ? 'Completed' : 'Scheduled'}
+                              </Badge>
+                            </div>
+                          )}
                         </div>
+                        
                         {date && (
-                          <div className="flex items-center gap-2">
-                            {completed ? (
-                              <CheckCircle className="w-5 h-5 text-green-600" />
-                            ) : (
-                              <Clock className="w-5 h-5 text-gray-400" />
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id={`${key}-completed`}
+                                checked={!!completed}
+                                onCheckedChange={(checked) => {
+                                  const updates = { ...application };
+                                  updates[`${key.replace('Date', 'Completed')}`] = checked === true;
+                                  onApplicationUpdate(application.id, updates);
+                                }}
+                              />
+                              <Label htmlFor={`${key}-completed`}>Mark as completed</Label>
+                            </div>
+                            
+                            {notes && (
+                              <div>
+                                <Label className="text-sm font-medium">Notes</Label>
+                                <p className="text-sm text-gray-600 mt-1">{notes}</p>
+                              </div>
                             )}
-                            <Badge variant={completed ? "default" : "secondary"}>
-                              {completed ? 'Completed' : 'Scheduled'}
-                            </Badge>
+                            
+                            <div className="space-y-2">
+                              <Label htmlFor={`${key}-notes`} className="text-sm font-medium">
+                                Add Notes
+                              </Label>
+                              <Textarea
+                                id={`${key}-notes`}
+                                placeholder="Add notes from the interview..."
+                                defaultValue={notes || ''}
+                                onBlur={(e) => {
+                                  const updates = { ...application };
+                                  updates[`${key.replace('Date', 'Notes')}`] = e.target.value;
+                                  onApplicationUpdate(application.id, updates);
+                                }}
+                                className="text-sm"
+                              />
+                            </div>
                           </div>
                         )}
                       </div>

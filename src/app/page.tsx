@@ -171,12 +171,20 @@ export default function JobApplicationTracker() {
 
   const handleApplicationUpdate = async (applicationId: string, updates: any) => {
     try {
+      // Ensure company and position are included in updates to satisfy API validation
+      const application = applications.find(app => app.id === applicationId)
+      const updateData = {
+        company: application?.company || updates.company,
+        position: application?.position || updates.position,
+        ...updates
+      }
+      
       const response = await fetch(`/api/applications/${applicationId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(updates),
+        body: JSON.stringify(updateData),
       })
 
       if (response.ok) {
@@ -209,7 +217,11 @@ export default function JobApplicationTracker() {
       
       console.log('Current application status:', application.status)
 
-      const updateData: any = { status: newStatus }
+      const updateData: any = {
+        status: newStatus,
+        company: application.company,
+        position: application.position
+      }
       
       // Update relevant date based on new status
       const today = new Date().toISOString().split('T')[0]
