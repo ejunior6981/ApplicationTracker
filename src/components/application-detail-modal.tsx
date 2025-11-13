@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,7 +25,7 @@ import {
   FileText,
   Plus,
   Edit,
-  Save,
+  Upload,
   X,
   Trash2,
   MessageSquare,
@@ -33,6 +33,7 @@ import {
   DollarSign
 } from 'lucide-react'
 import { format } from 'date-fns'
+import { toDateOnlyString, isoStringToLocalDate, formatDateUTC } from '@/lib/utils'
 
 interface JobApplication {
   id: string
@@ -63,6 +64,15 @@ interface JobApplication {
  updatedAt: string
  contacts?: Contact[]
  timelineEvents?: TimelineEvent[]
+  documents?: ApplicationDocument[]
+}
+
+interface ApplicationDocument {
+  id: string
+  label?: string | null
+  filePath: string
+  createdAt: string
+  updatedAt: string
 }
 
 interface Contact {
@@ -96,7 +106,8 @@ interface ApplicationDetailModalProps {
   onClose: () => void
   application: JobApplication | null
   onStatusChange: (applicationId: string, newStatus: string) => void
-  onApplicationUpdate: (applicationId: string, updates: any) => void
+  onApplicationUpdate: (applicationId: string, updates: any) => Promise<void> | void
+  onApplicationDelete: (applicationId: string) => Promise<void> | void
 }
 
 const statusColors = {
@@ -150,59 +161,212 @@ export function ApplicationDetailModal({
   onClose, 
   application, 
   onStatusChange,
-  onApplicationUpdate 
+  onApplicationUpdate,
+  onApplicationDelete
 }: ApplicationDetailModalProps) {
   const [activeTab, setActiveTab] = useState('timeline')
-  const [editingDates, setEditingDates] = useState(false)
   const [dateEdits, setDateEdits] = useState<any>({})
   const [newContact, setNewContact] = useState<Partial<Contact>>({})
   const [addingContact, setAddingContact] = useState(false)
   const [newEvent, setNewEvent] = useState<Partial<TimelineEvent>>({})
   const [addingEvent, setAddingEvent] = useState(false)
   const [deletingTimelineEvent, setDeletingTimelineEvent] = useState<string | null>(null)
-  const [deletingApplication, setDeletingApplication] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [isDeletingApplication, setIsDeletingApplication] = useState(false)
+  const [appliedDatePickerOpen, setAppliedDatePickerOpen] = useState(false)
+  const [activeInterviewDatePicker, setActiveInterviewDatePicker] = useState<string | null>(null)
+  const resumeInputRef = useRef<HTMLInputElement>(null)
+  const coverLetterInputRef = useRef<HTMLInputElement>(null)
+  const documentInputRef = useRef<HTMLInputElement>(null)
+  const [documentLabel, setDocumentLabel] = useState('')
+  const [pendingDocumentAction, setPendingDocumentAction] = useState<string | null>(null)
+
+  const interviewSteps = [
+    {
+      dateKey: 'initialCallDate',
+      label: 'Initial Call',
+      completedKey: 'initialCallCompleted',
+      notesKey: 'initialCallNotes'
+    },
+    {
+      dateKey: 'firstInterviewDate',
+      label: 'First Interview',
+      completedKey: 'firstInterviewCompleted',
+      notesKey: 'firstInterviewNotes'
+    },
+    {
+      dateKey: 'secondInterviewDate',
+      label: 'Second Interview',
+      completedKey: 'secondInterviewCompleted',
+      notesKey: 'secondInterviewNotes'
+    },
+    {
+      dateKey: 'thirdInterviewDate',
+      label: 'Third Interview',
+      completedKey: 'thirdInterviewCompleted',
+      notesKey: 'thirdInterviewNotes'
+    },
+    {
+      dateKey: 'negotiationsDate',
+      label: 'Negotiations',
+      completedKey: 'negotiationsCompleted',
+      notesKey: 'negotiationsNotes'
+    }
+  ] as const
+
+  const handleDateChange = (
+    key: string,
+    date: Date | null,
+    options?: { resetKey?: string }
+  ) => {
+    setDateEdits((prev: any) => ({
+      ...prev,
+      [key]: date ?? null
+    }))
+
+    const updates: Record<string, any> = {
+      [key]: date ? toDateOnlyString(date) : null
+    }
+
+    if (!date && options?.resetKey) {
+      updates[options.resetKey] = false
+    }
+
+    onApplicationUpdate(application!.id, updates)
+  }
+
+  const handleCompletionToggle = (key: string, checked: boolean) => {
+    onApplicationUpdate(application!.id, {
+      [key]: checked
+    })
+  }
+
+  const handleNotesBlur = (key: string, value: string) => {
+    const trimmed = value.trim()
+    const currentValue = application ? (application as any)[key] ?? '' : ''
+    if (currentValue === value) {
+      return
+    }
+
+    onApplicationUpdate(application!.id, {
+      [key]: trimmed.length > 0 ? value : null
+    })
+  }
+
+  const submitMultipartUpdate = async (
+    action: string,
+    configure: (formData: FormData) => void,
+    pendingKey: string = action
+  ) => {
+    if (!application) {
+      return
+    }
+
+    const formData = new FormData()
+    formData.append('action', action)
+    formData.append('company', application.company)
+    formData.append('position', application.position)
+    configure(formData)
+
+    setPendingDocumentAction(pendingKey)
+    try {
+      await Promise.resolve(onApplicationUpdate(application.id, formData))
+    } finally {
+      setPendingDocumentAction((current) => (current === pendingKey ? null : current))
+    }
+  }
+
+  const isPending = (key: string) => pendingDocumentAction === key
+
+  const handleResumeFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    await submitMultipartUpdate(
+      'uploadResume',
+      (formData) => {
+        formData.append('resumeFile', file)
+      },
+      'uploadResume'
+    )
+
+    event.target.value = ''
+  }
+
+  const handleResumeRemove = async () => {
+    await submitMultipartUpdate('removeResume', () => {}, 'removeResume')
+  }
+
+  const handleCoverLetterFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    await submitMultipartUpdate(
+      'uploadCoverLetter',
+      (formData) => {
+        formData.append('coverLetterFile', file)
+      },
+      'uploadCoverLetter'
+    )
+
+    event.target.value = ''
+  }
+
+  const handleCoverLetterRemove = async () => {
+    await submitMultipartUpdate('removeCoverLetter', () => {}, 'removeCoverLetter')
+  }
+
+  const handleAdditionalDocumentChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+
+    const label = documentLabel.trim()
+
+    await submitMultipartUpdate(
+      'uploadAdditional',
+      (formData) => {
+        formData.append('documentFile', file)
+        if (label.length > 0) {
+          formData.append('label', label)
+        }
+      },
+      'uploadAdditional'
+    )
+
+    setDocumentLabel('')
+    event.target.value = ''
+  }
+
+  const handleDocumentDelete = async (documentId: string) => {
+    await submitMultipartUpdate(
+      'deleteDocument',
+      (formData) => {
+        formData.append('documentId', documentId)
+      },
+      `delete-${documentId}`
+    )
+  }
 
   useEffect(() => {
     if (application) {
       setDateEdits({
-        appliedDate: application.appliedDate ? new Date(application.appliedDate) : null,
-        initialCallDate: application.initialCallDate ? new Date(application.initialCallDate) : null,
-        firstInterviewDate: application.firstInterviewDate ? new Date(application.firstInterviewDate) : null,
-        secondInterviewDate: application.secondInterviewDate ? new Date(application.secondInterviewDate) : null,
-        thirdInterviewDate: application.thirdInterviewDate ? new Date(application.thirdInterviewDate) : null,
-        negotiationsDate: application.negotiationsDate ? new Date(application.negotiationsDate) : null,
+        appliedDate: isoStringToLocalDate(application.appliedDate),
+        initialCallDate: isoStringToLocalDate(application.initialCallDate),
+        firstInterviewDate: isoStringToLocalDate(application.firstInterviewDate),
+        secondInterviewDate: isoStringToLocalDate(application.secondInterviewDate),
+        thirdInterviewDate: isoStringToLocalDate(application.thirdInterviewDate),
+        negotiationsDate: isoStringToLocalDate(application.negotiationsDate),
       })
     }
   }, [application])
 
   if (!application) return null
-
-  const handleSaveDates = async () => {
-    const updates = {
-      company: application.company,
-      position: application.position,
-      appliedDate: dateEdits.appliedDate?.toISOString().split('T')[0],
-      initialCallDate: dateEdits.initialCallDate?.toISOString().split('T')[0],
-      initialCallCompleted: application.initialCallCompleted,
-      initialCallNotes: application.initialCallNotes,
-      firstInterviewDate: dateEdits.firstInterviewDate?.toISOString().split('T')[0],
-      firstInterviewCompleted: application.firstInterviewCompleted,
-      firstInterviewNotes: application.firstInterviewNotes,
-      secondInterviewDate: dateEdits.secondInterviewDate?.toISOString().split('T')[0],
-      secondInterviewCompleted: application.secondInterviewCompleted,
-      secondInterviewNotes: application.secondInterviewNotes,
-      thirdInterviewDate: dateEdits.thirdInterviewDate?.toISOString().split('T')[0],
-      thirdInterviewCompleted: application.thirdInterviewCompleted,
-      thirdInterviewNotes: application.thirdInterviewNotes,
-      negotiationsDate: dateEdits.negotiationsDate?.toISOString().split('T')[0],
-      negotiationsCompleted: application.negotiationsCompleted,
-      negotiationsNotes: application.negotiationsNotes,
-    }
-
-    onApplicationUpdate(application.id, updates)
-    setEditingDates(false)
-  }
-
   const handleAddContact = async () => {
     if (!newContact.name) return
 
@@ -241,9 +405,20 @@ export function ApplicationDetailModal({
     setAddingEvent(false)
   }
 
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return 'Not set'
-    return format(new Date(dateString), 'MMM dd, yyyy')
+  const formatDate = (value?: string | Date | null) => {
+    if (!value) return 'Not set'
+    if (value instanceof Date) {
+      return format(value, 'MMM dd, yyyy')
+    }
+    return formatDateUTC(value, { month: 'short', day: 'numeric', year: 'numeric' })
+  }
+
+  const getDocumentName = (filePath: string) => {
+    try {
+      return decodeURIComponent(filePath.split('/').pop() || filePath)
+    } catch {
+      return filePath.split('/').pop() || filePath
+    }
   }
 
  const getTimelineEvents = () => {
@@ -467,20 +642,19 @@ export function ApplicationDetailModal({
   }
 
   const handleDeleteApplication = async () => {
-    try {
-      const response = await fetch(`/api/applications/${application?.id}`, {
-        method: 'DELETE',
-      })
+    if (!application) {
+      return
+    }
 
-      if (response.ok) {
-        onClose()
-      } else {
-        console.error('Failed to delete application')
-      }
+    setIsDeletingApplication(true)
+    try {
+      await Promise.resolve(onApplicationDelete(application.id))
+      onClose()
     } catch (error) {
       console.error('Error deleting application:', error)
     } finally {
-      setDeletingApplication(false)
+      setIsDeletingApplication(false)
+      setDeleteDialogOpen(false)
     }
   }
 
@@ -516,9 +690,14 @@ export function ApplicationDetailModal({
                   <SelectItem value="LOST">Lost</SelectItem>
                 </SelectContent>
               </Select>
-              <AlertDialog open={deletingApplication}>
+              <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
                 <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm" className="flex items-center gap-1">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    className="flex items-center gap-1"
+                    onClick={() => setDeleteDialogOpen(true)}
+                  >
                     <Trash2 className="h-4 w-4" />
                     Delete
                   </Button>
@@ -531,12 +710,15 @@ export function ApplicationDetailModal({
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel onClick={() => setDeletingApplication(false)}>Cancel</AlertDialogCancel>
-                    <AlertDialogAction 
-                      onClick={() => handleDeleteApplication()}
+                    <AlertDialogCancel onClick={() => setDeleteDialogOpen(false)} disabled={isDeletingApplication}>
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={handleDeleteApplication}
                       className="bg-red-600 hover:bg-red-700"
+                      disabled={isDeletingApplication}
                     >
-                      Delete Application
+                      {isDeletingApplication ? 'Deleting…' : 'Delete Application'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -701,122 +883,112 @@ export function ApplicationDetailModal({
           <TabsContent value="interviews" className="space-y-4">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-semibold">Interview Schedule</h3>
-              <Button 
-                onClick={() => setEditingDates(!editingDates)}
-                variant={editingDates ? "default" : "outline"}
-                className="flex items-center gap-2"
-              >
-                {editingDates ? <Save className="w-4 h-4" /> : <Edit className="w-4 h-4" />}
-                {editingDates ? 'Save Dates' : 'Edit Dates'}
-              </Button>
             </div>
 
-            {editingDates && (
-              <div className="grid gap-4">
-                {[
-                  { key: 'appliedDate', label: 'Applied Date' },
-                  { key: 'initialCallDate', label: 'Initial Call Date' },
-                  { key: 'firstInterviewDate', label: 'First Interview Date' },
-                  { key: 'secondInterviewDate', label: 'Second Interview Date' },
-                  { key: 'thirdInterviewDate', label: 'Third Interview Date' },
-                  { key: 'negotiationsDate', label: 'Negotiations Date' }
-                ].map(({ key, label }) => (
-                  <div key={key} className="flex items-center gap-4">
-                    <Label className="w-40">{label}:</Label>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <Button variant="outline" className="flex-1 justify-start">
-                          <CalendarIcon className="mr-2 h-4 w-4" />
-                          {dateEdits[key] ? format(dateEdits[key], 'PPP') : 'Pick a date'}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
-                        <Calendar
-                          mode="single"
-                          selected={dateEdits[key]}
-                          onSelect={(date) => setDateEdits({...dateEdits, [key]: date})}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                ))}
-                <div className="flex gap-2">
-                  <Button onClick={handleSaveDates}>Save All Dates</Button>
-                  <Button variant="outline" onClick={() => setEditingDates(false)}>Cancel</Button>
-                </div>
-              </div>
-            )}
+            <div className="grid gap-4">
+              {interviewSteps.map(({ dateKey, label, completedKey, notesKey }) => {
+                const date = application[dateKey as keyof JobApplication] as string | undefined
+                const completed = application[completedKey as keyof JobApplication] as boolean | undefined
+                const notes = application[notesKey as keyof JobApplication] as string | undefined
+                const storedDate = dateEdits[dateKey] as Date | null | undefined
+                const localDate = storedDate === undefined ? isoStringToLocalDate(date) : storedDate
+                const hasDate = Boolean(localDate)
+                const displayDate = hasDate ? formatDate(localDate) : 'Not scheduled'
 
-            {!editingDates && (
-              <div className="grid gap-4">
-                {[
-                  { key: 'appliedDate', label: 'Applied Date', date: application.appliedDate },
-                  { key: 'initialCallDate', label: 'Initial Call', date: application.initialCallDate, completed: application.initialCallCompleted, notes: application.initialCallNotes },
-                  { key: 'firstInterviewDate', label: 'First Interview', date: application.firstInterviewDate, completed: application.firstInterviewCompleted, notes: application.firstInterviewNotes },
-                  { key: 'secondInterviewDate', label: 'Second Interview', date: application.secondInterviewDate, completed: application.secondInterviewCompleted, notes: application.secondInterviewNotes },
-                  { key: 'thirdInterviewDate', label: 'Third Interview', date: application.thirdInterviewDate, completed: application.thirdInterviewCompleted, notes: application.thirdInterviewNotes },
-                  { key: 'negotiationsDate', label: 'Negotiations', date: application.negotiationsDate, completed: application.negotiationsCompleted, notes: application.negotiationsNotes }
-                ].map(({ key, label, date, completed, notes }) => (
-                  <Card key={key}>
+                return (
+                  <Card key={dateKey}>
                     <CardContent className="p-4">
                       <div className="flex flex-col gap-4">
-                        <div className="flex items-center justify-between">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
                           <div>
                             <h4 className="font-semibold">{label}</h4>
-                            <p className="text-sm text-gray-600">
-                              {date ? formatDate(date) : 'Not scheduled'}
-                            </p>
+                            <p className="text-sm text-gray-600">{displayDate}</p>
                           </div>
-                          {date && (
-                            <div className="flex items-center gap-2">
-                              {completed ? (
-                                <CheckCircle className="w-5 h-5 text-green-600" />
-                              ) : (
-                                <Clock className="w-5 h-5 text-gray-400" />
-                              )}
-                              <Badge variant={completed ? "default" : "secondary"}>
-                                {completed ? 'Completed' : 'Scheduled'}
-                              </Badge>
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2">
+                            {hasDate && (
+                              <>
+                                {completed ? (
+                                  <CheckCircle className="w-5 h-5 text-green-600" />
+                                ) : (
+                                  <Clock className="w-5 h-5 text-gray-400" />
+                                )}
+                                <Badge variant={completed ? 'default' : 'secondary'}>
+                                  {completed ? 'Completed' : 'Scheduled'}
+                                </Badge>
+                              </>
+                            )}
+                            <Popover
+                              open={activeInterviewDatePicker === dateKey}
+                              onOpenChange={(open) => setActiveInterviewDatePicker(open ? dateKey : null)}
+                            >
+                              <PopoverTrigger asChild>
+                                <Button variant="outline" size="sm" className="flex items-center gap-2">
+                                  <CalendarIcon className="w-4 h-4" />
+                                  {hasDate ? 'Edit Date' : 'Add Date'}
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-auto p-0">
+                                <div className="space-y-2 p-3">
+                                  <Calendar
+                                    mode="single"
+                                    selected={localDate ?? undefined}
+                                    onSelect={(selectedDate) => {
+                                      handleDateChange(dateKey, selectedDate ?? null, {
+                                        resetKey: completedKey,
+                                      })
+                                      setActiveInterviewDatePicker(null)
+                                    }}
+                                    initialFocus
+                                  />
+                                  {hasDate && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-full justify-start"
+                                      onClick={() => {
+                                        handleDateChange(dateKey, null, { resetKey: completedKey })
+                                        setActiveInterviewDatePicker(null)
+                                      }}
+                                    >
+                                      <X className="mr-2 h-4 w-4" />
+                                      Clear Date
+                                    </Button>
+                                  )}
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
                         </div>
-                        
-                        {date && (
+
+                        {hasDate && (
                           <div className="space-y-3">
                             <div className="flex items-center gap-2">
                               <Checkbox
-                                id={`${key}-completed`}
+                                id={`${dateKey}-completed`}
                                 checked={!!completed}
-                                onCheckedChange={(checked) => {
-                                  const updates = { ...application };
-                                  updates[`${key.replace('Date', 'Completed')}`] = checked === true;
-                                  onApplicationUpdate(application.id, updates);
-                                }}
+                                onCheckedChange={(checked) =>
+                                  handleCompletionToggle(completedKey, checked === true)
+                                }
                               />
-                              <Label htmlFor={`${key}-completed`}>Mark as completed</Label>
+                              <Label htmlFor={`${dateKey}-completed`}>Mark as completed</Label>
                             </div>
-                            
+
                             {notes && (
                               <div>
                                 <Label className="text-sm font-medium">Notes</Label>
                                 <p className="text-sm text-gray-600 mt-1">{notes}</p>
                               </div>
                             )}
-                            
+
                             <div className="space-y-2">
-                              <Label htmlFor={`${key}-notes`} className="text-sm font-medium">
+                              <Label htmlFor={`${dateKey}-notes`} className="text-sm font-medium">
                                 Add Notes
                               </Label>
                               <Textarea
-                                id={`${key}-notes`}
+                                id={`${dateKey}-notes`}
                                 placeholder="Add notes from the interview..."
                                 defaultValue={notes || ''}
-                                onBlur={(e) => {
-                                  const updates = { ...application };
-                                  updates[`${key.replace('Date', 'Notes')}`] = e.target.value;
-                                  onApplicationUpdate(application.id, updates);
-                                }}
+                                onBlur={(e) => handleNotesBlur(notesKey, e.target.value)}
                                 className="text-sm"
                               />
                             </div>
@@ -825,9 +997,9 @@ export function ApplicationDetailModal({
                       </div>
                     </CardContent>
                   </Card>
-                ))}
-              </div>
-            )}
+                )
+              })}
+            </div>
           </TabsContent>
 
           <TabsContent value="contacts" className="space-y-4">
@@ -903,7 +1075,9 @@ export function ApplicationDetailModal({
                     <Checkbox
                       id="primary"
                       checked={newContact.isPrimary || false}
-                      onCheckedChange={(checked) => setNewContact({...newContact, isPrimary: checked})}
+                      onCheckedChange={(checked) =>
+                        setNewContact({...newContact, isPrimary: checked === true})
+                      }
                     />
                     <Label htmlFor="primary">Primary contact</Label>
                   </div>
@@ -1004,6 +1178,42 @@ export function ApplicationDetailModal({
                       {statusLabels[application.status as keyof typeof statusLabels]}
                     </Badge>
                   </div>
+                  <div>
+                    <Label>Applied Date</Label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="font-medium">
+                        {application.appliedDate ? formatDate(application.appliedDate) : 'Not set'}
+                      </p>
+                      <Popover open={appliedDatePickerOpen} onOpenChange={setAppliedDatePickerOpen}>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm">
+                            {application.appliedDate ? 'Change Date' : 'Set Date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar
+                            mode="single"
+                            selected={dateEdits.appliedDate ?? undefined}
+                            onSelect={(date) => {
+                              handleDateChange('appliedDate', date ?? null)
+                              setAppliedDatePickerOpen(false)
+                            }}
+                            initialFocus
+                          />
+                        </PopoverContent>
+                      </Popover>
+                      {application.appliedDate && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDateChange('appliedDate', null)}
+                          aria-label="Clear applied date"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                   {application.notes && (
                     <div>
                       <Label>Notes</Label>
@@ -1017,23 +1227,160 @@ export function ApplicationDetailModal({
                 <CardHeader>
                   <CardTitle className="text-base">Documents</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-6">
+                  <input
+                    ref={resumeInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={handleResumeFileChange}
+                  />
+                  <input
+                    ref={coverLetterInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={handleCoverLetterFileChange}
+                  />
+                  <input
+                    ref={documentInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    className="hidden"
+                    onChange={handleAdditionalDocumentChange}
+                  />
+
                   <div className="space-y-2">
-                    {application.resumeFile && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <FileText className="w-4 h-4 text-blue-600" />
-                        <span>Resume: {application.resumeFile}</span>
-                      </div>
-                    )}
-                    {application.coverLetterFile && (
-                      <div className="flex items-center gap-2 text-sm">
-                        <FileText className="w-4 h-4 text-green-600" />
-                        <span>Cover Letter: {application.coverLetterFile}</span>
-                      </div>
-                    )}
-                    {!application.resumeFile && !application.coverLetterFile && (
-                      <p className="text-gray-500">No documents uploaded</p>
-                    )}
+                    <Label className="text-sm font-medium">Resume</Label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => resumeInputRef.current?.click()}
+                        disabled={isPending('uploadResume')}
+                      >
+                        <Upload className="w-4 h-4" />
+                        {application.resumeFile ? 'Replace Resume' : 'Upload Resume'}
+                      </Button>
+                      {application.resumeFile ? (
+                        <>
+                          <a
+                            href={application.resumeFile}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>{getDocumentName(application.resumeFile)}</span>
+                          </a>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleResumeRemove}
+                            disabled={isPending('removeResume')}
+                          >
+                            Remove
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-sm text-gray-500">No resume uploaded</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Cover Letter</Label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => coverLetterInputRef.current?.click()}
+                        disabled={isPending('uploadCoverLetter')}
+                      >
+                        <Upload className="w-4 h-4" />
+                        {application.coverLetterFile ? 'Replace Cover Letter' : 'Upload Cover Letter'}
+                      </Button>
+                      {application.coverLetterFile ? (
+                        <>
+                          <a
+                            href={application.coverLetterFile}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-2 text-sm text-green-600 hover:underline"
+                          >
+                            <FileText className="w-4 h-4" />
+                            <span>{getDocumentName(application.coverLetterFile)}</span>
+                          </a>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={handleCoverLetterRemove}
+                            disabled={isPending('removeCoverLetter')}
+                          >
+                            Remove
+                          </Button>
+                        </>
+                      ) : (
+                        <span className="text-sm text-gray-500">No cover letter uploaded</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label className="text-sm font-medium">Additional Documents</Label>
+                      <p className="text-xs text-gray-500">Optional label helps identify each upload.</p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                      <Input
+                        value={documentLabel}
+                        onChange={(event) => setDocumentLabel(event.target.value)}
+                        placeholder="Document label (optional)"
+                        className="sm:max-w-xs"
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="flex items-center gap-2"
+                        onClick={() => documentInputRef.current?.click()}
+                        disabled={isPending('uploadAdditional')}
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload Document
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {application.documents && application.documents.length > 0 ? (
+                        application.documents.map((doc) => (
+                          <div
+                            key={doc.id}
+                            className="flex items-center justify-between gap-3 rounded border border-gray-200 p-2"
+                          >
+                            <a
+                              href={doc.filePath}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-2 text-sm text-blue-600 hover:underline"
+                            >
+                              <FileText className="w-4 h-4" />
+                              <span>{doc.label || getDocumentName(doc.filePath)}</span>
+                            </a>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => handleDocumentDelete(doc.id)}
+                              disabled={isPending(`delete-${doc.id}`)}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-gray-500">No additional documents uploaded</p>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

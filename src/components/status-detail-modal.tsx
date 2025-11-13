@@ -37,6 +37,7 @@ interface StatusDetailModalProps {
   statusId: string | null
   applications: JobApplication[]
   onStatusChange: (applicationId: string, newStatus: string) => void
+  onViewDetails: (application: JobApplication) => void
 }
 
 const statusColors = {
@@ -86,7 +87,8 @@ export function StatusDetailModal({
   onClose, 
   statusId, 
   applications, 
-  onStatusChange 
+  onStatusChange,
+  onViewDetails
 }: StatusDetailModalProps) {
   if (!statusId || !statusConfigs[statusId as keyof typeof statusConfigs]) {
     return null
@@ -111,6 +113,15 @@ export function StatusDetailModal({
       day: 'numeric',
       year: 'numeric'
     })
+  }
+
+  const getDocumentName = (filePath?: string) => {
+    if (!filePath) return ''
+    try {
+      return decodeURIComponent(filePath.split('/').pop() || filePath)
+    } catch {
+      return filePath.split('/').pop() || filePath
+    }
   }
 
   return (
@@ -329,16 +340,26 @@ export function StatusDetailModal({
                     <div className="pt-3 border-t">
                       <div className="flex gap-4 text-sm">
                         {application.resumeFile && (
-                          <div className="flex items-center gap-1 text-blue-600">
+                          <a
+                            href={application.resumeFile}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-blue-600 hover:underline"
+                          >
                             <FileText className="w-4 h-4" />
-                            <span>Resume</span>
-                          </div>
+                            <span>Resume ({getDocumentName(application.resumeFile)})</span>
+                          </a>
                         )}
                         {application.coverLetterFile && (
-                          <div className="flex items-center gap-1 text-green-600">
+                          <a
+                            href={application.coverLetterFile}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center gap-1 text-green-600 hover:underline"
+                          >
                             <FileText className="w-4 h-4" />
-                            <span>Cover Letter</span>
-                          </div>
+                            <span>Cover Letter ({getDocumentName(application.coverLetterFile)})</span>
+                          </a>
                         )}
                       </div>
                     </div>
@@ -351,6 +372,16 @@ export function StatusDetailModal({
                         </p>
                       </div>
                     )}
+
+                    <div className="pt-3 border-t flex justify-end">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onViewDetails(application)}
+                      >
+                        View Details
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

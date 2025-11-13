@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,8 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Badge } from '@/components/ui/badge'
-import { Plus, CalendarIcon, Upload, X } from 'lucide-react'
+import { Plus, CalendarIcon, Upload, X, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface ApplicationFormData {
@@ -33,6 +32,16 @@ interface ApplicationFormData {
   notes: string
   resumeFile?: File
   coverLetterFile?: File
+  additionalDocuments?: Array<{
+    file: File
+    label?: string
+  }>
+}
+
+interface AdditionalDocumentInput {
+  id: string
+  file: File
+  label?: string
 }
 
 const statusOptions = [
@@ -69,13 +78,20 @@ export function ApplicationForm({ onSubmit, trigger }: ApplicationFormProps) {
 
   const [resumeFile, setResumeFile] = useState<File | null>(null)
   const [coverLetterFile, setCoverLetterFile] = useState<File | null>(null)
+  const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocumentInput[]>([])
+  const [documentLabel, setDocumentLabel] = useState('')
+  const additionalDocumentInputRef = useRef<HTMLInputElement>(null)
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     onSubmit({
       ...formData,
       resumeFile: resumeFile || undefined,
-      coverLetterFile: coverLetterFile || undefined
+      coverLetterFile: coverLetterFile || undefined,
+      additionalDocuments: additionalDocuments.map(({ file, label }) => ({
+        file,
+        label: label?.trim() ? label.trim() : undefined
+      }))
     })
     setOpen(false)
     // Reset form
@@ -93,6 +109,8 @@ export function ApplicationForm({ onSubmit, trigger }: ApplicationFormProps) {
     })
     setResumeFile(null)
     setCoverLetterFile(null)
+    setAdditionalDocuments([])
+    setDocumentLabel('')
   }
 
   const handleFileChange = (type: 'resume' | 'coverLetter', file: File) => {
@@ -101,6 +119,22 @@ export function ApplicationForm({ onSubmit, trigger }: ApplicationFormProps) {
     } else {
       setCoverLetterFile(file)
     }
+  }
+
+  const handleAdditionalDocumentAdd = (file: File) => {
+    setAdditionalDocuments((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        file,
+        label: documentLabel.trim() ? documentLabel.trim() : undefined
+      }
+    ])
+    setDocumentLabel('')
+  }
+
+  const handleAdditionalDocumentRemove = (id: string) => {
+    setAdditionalDocuments((prev) => prev.filter((doc) => doc.id !== id))
   }
 
   const DatePicker = ({ 
@@ -406,6 +440,64 @@ export function ApplicationForm({ onSubmit, trigger }: ApplicationFormProps) {
                   </label>
                 </div>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Additional Documents</Label>
+              <p className="text-xs text-gray-500">Optional label helps identify each upload.</p>
+              <input
+                ref={additionalDocumentInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx"
+                className="hidden"
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) {
+                    handleAdditionalDocumentAdd(file)
+                  }
+                  event.target.value = ''
+                }}
+              />
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  value={documentLabel}
+                  onChange={(event) => setDocumentLabel(event.target.value)}
+                  placeholder="Document label (optional)"
+                  className="sm:max-w-xs"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex items-center gap-2"
+                  onClick={() => additionalDocumentInputRef.current?.click()}
+                >
+                  <Upload className="w-4 h-4" />
+                  Add Document
+                </Button>
+              </div>
+              {additionalDocuments.length > 0 && (
+                <div className="space-y-2">
+                  {additionalDocuments.map((doc) => (
+                    <div
+                      key={doc.id}
+                      className="flex items-center justify-between gap-3 rounded border border-gray-200 p-2"
+                    >
+                      <div className="flex flex-col text-sm">
+                        <span className="font-medium">{doc.label || doc.file.name}</span>
+                        {doc.label && <span className="text-xs text-gray-500 truncate">{doc.file.name}</span>}
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleAdditionalDocumentRemove(doc.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

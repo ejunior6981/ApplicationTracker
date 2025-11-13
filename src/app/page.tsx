@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ApplicationForm } from '@/components/application-form'
 import { ApplicationDetailModal } from '@/components/application-detail-modal'
 import { StatusDetailModal } from '@/components/status-detail-modal'
+import { toDateOnlyString, formatDateUTC } from '@/lib/utils'
 import { 
   Plus, 
   Calendar, 
@@ -26,6 +27,14 @@ import {
   Eye,
   EyeOff
 } from 'lucide-react'
+
+interface ApplicationDocument {
+  id: string
+  label?: string | null
+  filePath: string
+  createdAt: string
+  updatedAt: string
+}
 
 interface JobApplication {
   id: string
@@ -49,6 +58,7 @@ interface JobApplication {
   notes?: string
   createdAt: string
   updatedAt: string
+  documents?: ApplicationDocument[]
 }
 
 const statusColors = {
@@ -115,7 +125,11 @@ export default function JobApplicationTracker() {
         const response = await fetch('/api/applications')
         if (response.ok) {
           const data = await response.json()
-          setApplications(data)
+          const normalized = data.map((application: JobApplication) => ({
+            ...application,
+            documents: application.documents ?? []
+          }))
+          setApplications(normalized)
         }
       } catch (error) {
         console.error('Error fetching applications:', error)
@@ -129,38 +143,55 @@ export default function JobApplicationTracker() {
 
   const handleAddApplication = async (formData: any) => {
     try {
-      const applicationData = {
-        company: formData.company,
-        position: formData.position,
-        pay: formData.pay || null,
-        status: formData.status,
-        appliedDate: formData.appliedDate ? formData.appliedDate.toISOString().split('T')[0] : null,
-        initialCallDate: formData.initialCallDate ? formData.initialCallDate.toISOString().split('T')[0] : null,
-        initialCallCompleted: formData.initialCallCompleted || false,
-        firstInterviewDate: formData.firstInterviewDate ? formData.firstInterviewDate.toISOString().split('T')[0] : null,
-        firstInterviewCompleted: formData.firstInterviewCompleted || false,
-        secondInterviewDate: formData.secondInterviewDate ? formData.secondInterviewDate.toISOString().split('T')[0] : null,
-        secondInterviewCompleted: formData.secondInterviewCompleted || false,
-        thirdInterviewDate: formData.thirdInterviewDate ? formData.thirdInterviewDate.toISOString().split('T')[0] : null,
-        thirdInterviewCompleted: formData.thirdInterviewCompleted || false,
-        negotiationsDate: formData.negotiationsDate ? formData.negotiationsDate.toISOString().split('T')[0] : null,
-        negotiationsCompleted: formData.negotiationsCompleted || false,
-        notes: formData.notes || null,
-        resumeFile: formData.resumeFile?.name || null,
-        coverLetterFile: formData.coverLetterFile?.name || null
+      const payload = new FormData()
+      payload.append('company', formData.company)
+      payload.append('position', formData.position)
+      payload.append('status', formData.status)
+      if (formData.pay) payload.append('pay', formData.pay)
+
+      const appendDate = (key: string, value?: Date | null) => {
+        const dateString = value ? toDateOnlyString(value) : null
+        if (dateString) payload.append(key, dateString)
+      }
+
+      appendDate('appliedDate', formData.appliedDate)
+      appendDate('initialCallDate', formData.initialCallDate)
+      appendDate('firstInterviewDate', formData.firstInterviewDate)
+      appendDate('secondInterviewDate', formData.secondInterviewDate)
+      appendDate('thirdInterviewDate', formData.thirdInterviewDate)
+      appendDate('negotiationsDate', formData.negotiationsDate)
+
+      payload.append('initialCallCompleted', String(formData.initialCallCompleted || false))
+      payload.append('firstInterviewCompleted', String(formData.firstInterviewCompleted || false))
+      payload.append('secondInterviewCompleted', String(formData.secondInterviewCompleted || false))
+      payload.append('thirdInterviewCompleted', String(formData.thirdInterviewCompleted || false))
+      payload.append('negotiationsCompleted', String(formData.negotiationsCompleted || false))
+
+      if (formData.notes) payload.append('notes', formData.notes)
+      if (formData.resumeFile) payload.append('resumeFile', formData.resumeFile)
+      if (formData.coverLetterFile) payload.append('coverLetterFile', formData.coverLetterFile)
+      if (Array.isArray(formData.additionalDocuments)) {
+        formData.additionalDocuments.forEach((doc) => {
+          if (!doc || !doc.file) {
+            return
+          }
+          payload.append('documentFiles', doc.file)
+          payload.append('documentLabels', doc.label ?? '')
+        })
       }
 
       const response = await fetch('/api/applications', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(applicationData),
+        body: payload,
       })
 
       if (response.ok) {
         const newApplication = await response.json()
-        setApplications(prev => [newApplication, ...prev])
+        const normalizedApplication = {
+          ...newApplication,
+          documents: newApplication.documents ?? []
+        }
+        setApplications(prev => [normalizedApplication, ...prev])
       } else {
         console.error('Failed to create application')
       }
@@ -171,8 +202,38 @@ export default function JobApplicationTracker() {
 
   const handleApplicationUpdate = async (applicationId: string, updates: any) => {
     try {
-      // Ensure company and position are included in updates to satisfy API validation
       const application = applications.find(app => app.id === applicationId)
+      if (updates instanceof FormData) {
+        if (application) {
+          if (!updates.has('company')) updates.append('company', application.company)
+          if (!updates.has('position')) updates.append('position', application.position)
+        }
+
+        const response = await fetch(`/api/applications/${applicationId}`, {
+          method: 'PUT',
+          body: updates,
+        })
+
+        if (response.ok) {
+          const updatedApplication = await response.json()
+          const normalizedApplication = {
+            ...updatedApplication,
+            documents: updatedApplication.documents ?? []
+          }
+          setApplications(prev => prev.map(app =>
+            app.id === applicationId ? normalizedApplication : app
+          ))
+          if (selectedApplication?.id === applicationId) {
+            setSelectedApplication(normalizedApplication)
+          }
+        } else {
+          console.error('Failed to update application')
+        }
+
+        return
+      }
+
+      // Ensure company and position are included in updates to satisfy API validation
       const updateData = {
         company: application?.company || updates.company,
         position: application?.position || updates.position,
@@ -189,11 +250,15 @@ export default function JobApplicationTracker() {
 
       if (response.ok) {
         const updatedApplication = await response.json()
+        const normalizedApplication = {
+          ...updatedApplication,
+          documents: updatedApplication.documents ?? []
+        }
         setApplications(prev => prev.map(app => 
-          app.id === applicationId ? updatedApplication : app
+          app.id === applicationId ? normalizedApplication : app
         ))
         if (selectedApplication?.id === applicationId) {
-          setSelectedApplication(updatedApplication)
+          setSelectedApplication(normalizedApplication)
         }
       } else {
         console.error('Failed to update application')
@@ -201,6 +266,30 @@ export default function JobApplicationTracker() {
     } catch (error) {
       console.error('Error updating application:', error)
     }
+  }
+
+  const handleApplicationDelete = async (applicationId: string) => {
+    try {
+      const response = await fetch(`/api/applications/${applicationId}`, {
+        method: 'DELETE'
+      })
+
+      if (response.ok) {
+        setApplications(prev => prev.filter(app => app.id !== applicationId))
+        if (selectedApplication?.id === applicationId) {
+          setSelectedApplication(null)
+        }
+      } else {
+        console.error('Failed to delete application')
+      }
+    } catch (error) {
+      console.error('Error deleting application:', error)
+    }
+  }
+
+  const handleViewApplicationDetails = (application: JobApplication) => {
+    setSelectedApplication(application)
+    setSelectedStatus(null)
   }
 
   const handleStatusChange = async (applicationId: string, newStatus: string) => {
@@ -224,7 +313,11 @@ export default function JobApplicationTracker() {
       }
       
       // Update relevant date based on new status
-      const today = new Date().toISOString().split('T')[0]
+      const today = toDateOnlyString(new Date())
+      if (!today) {
+        console.error('Failed to derive current date string')
+        return
+      }
       
       switch (newStatus) {
         case 'APPLIED':
@@ -296,7 +389,7 @@ export default function JobApplicationTracker() {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return ''
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return formatDateUTC(dateString, {
       month: 'short',
       day: 'numeric'
     })
@@ -704,6 +797,7 @@ export default function JobApplicationTracker() {
         application={selectedApplication}
         onStatusChange={handleStatusChange}
         onApplicationUpdate={handleApplicationUpdate}
+        onApplicationDelete={handleApplicationDelete}
       />
 
       {/* Status Detail Modal */}
@@ -713,6 +807,7 @@ export default function JobApplicationTracker() {
         statusId={selectedStatus}
         applications={applications}
         onStatusChange={handleStatusChange}
+        onViewDetails={handleViewApplicationDetails}
       />
     </div>
   )

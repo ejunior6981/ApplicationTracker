@@ -57,6 +57,7 @@ model JobApplication {
   // Relations
   contacts      Contact[]
   timelineEvents TimelineEvent[]
+  documents     ApplicationDocument[]
   
   @@map("job_applications")
 }
@@ -97,6 +98,19 @@ model TimelineEvent {
   application     JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
   
   @@map("timeline_events")
+}
+
+model ApplicationDocument {
+  id            String   @id @default(cuid())
+  applicationId String
+  label         String?
+  filePath      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  application   JobApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@map("application_documents")
 }
 
 enum ApplicationStatus {

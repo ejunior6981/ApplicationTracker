@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Application Tracker",
   description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
+  keywords: ["Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
   authors: [{ name: "Z.ai Team" }],
   icons: {
     icon: "/favicon.ico",
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "Application Tracker",
     description: "AI-powered development with modern React stack",
-    siteName: "Z.ai",
+    siteName: "Application tracker",
     type: "website",
   },
   twitter: {
