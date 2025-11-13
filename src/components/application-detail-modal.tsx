@@ -165,7 +165,6 @@ export function ApplicationDetailModal({
   useEffect(() => {
     if (application) {
       setDateEdits({
-        appliedDate: application.appliedDate ? new Date(application.appliedDate) : null,
         initialCallDate: application.initialCallDate ? new Date(application.initialCallDate) : null,
         firstInterviewDate: application.firstInterviewDate ? new Date(application.firstInterviewDate) : null,
         secondInterviewDate: application.secondInterviewDate ? new Date(application.secondInterviewDate) : null,
@@ -181,7 +180,6 @@ export function ApplicationDetailModal({
     const updates = {
       company: application.company,
       position: application.position,
-      appliedDate: dateEdits.appliedDate?.toISOString().split('T')[0],
       initialCallDate: dateEdits.initialCallDate?.toISOString().split('T')[0],
       initialCallCompleted: application.initialCallCompleted,
       initialCallNotes: application.initialCallNotes,
