@@ -714,7 +714,6 @@ export function ApplicationDetailModal({
             {editingDates && (
               <div className="grid gap-4">
                 {[
-                  { key: 'appliedDate', label: 'Applied Date' },
                   { key: 'initialCallDate', label: 'Initial Call Date' },
                   { key: 'firstInterviewDate', label: 'First Interview Date' },
                   { key: 'secondInterviewDate', label: 'Second Interview Date' },
@@ -751,7 +750,6 @@ export function ApplicationDetailModal({
             {!editingDates && (
               <div className="grid gap-4">
                 {[
-                  { key: 'appliedDate', label: 'Applied Date', date: application.appliedDate },
                   { key: 'initialCallDate', label: 'Initial Call', date: application.initialCallDate, completed: application.initialCallCompleted, notes: application.initialCallNotes },
                   { key: 'firstInterviewDate', label: 'First Interview', date: application.firstInterviewDate, completed: application.firstInterviewCompleted, notes: application.firstInterviewNotes },
                   { key: 'secondInterviewDate', label: 'Second Interview', date: application.secondInterviewDate, completed: application.secondInterviewCompleted, notes: application.secondInterviewNotes },
@@ -768,7 +766,7 @@ export function ApplicationDetailModal({
                               {date ? formatDate(date) : 'Not scheduled'}
                             </p>
                           </div>
-                          {date && (
+                          {date && completed !== undefined && (
                             <div className="flex items-center gap-2">
                               {completed ? (
                                 <CheckCircle className="w-5 h-5 text-green-600" />
@@ -782,7 +780,7 @@ export function ApplicationDetailModal({
                           )}
                         </div>
                         
-                        {date && (
+                        {date && completed !== undefined && (
                           <div className="space-y-3">
                             <div className="flex items-center gap-2">
                               <Checkbox
@@ -903,7 +901,7 @@ export function ApplicationDetailModal({
                     <Checkbox
                       id="primary"
                       checked={newContact.isPrimary || false}
-                      onCheckedChange={(checked) => setNewContact({...newContact, isPrimary: checked})}
+                      onCheckedChange={(checked) => setNewContact({...newContact, isPrimary: checked === true})}
                     />
                     <Label htmlFor="primary">Primary contact</Label>
                   </div>
